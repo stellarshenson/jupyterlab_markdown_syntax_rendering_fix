@@ -1,0 +1,18 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: v4.6.2
+_src_path: https://github.com/jupyterlab/extension-template
+advanced: false
+author_email: konrad.jelen+github@gmail.com
+author_name: Stellars Henson
+has_ai_rules: false
+has_binder: false
+has_settings: false
+kind: frontend
+labextension_name: jupyterlab_markdown_syntax_rendering_fix
+project_short_description: Jupyterlab extension to fix a common issue with Markdown
+    renderer where some race condition causes for the fenced code block to not have
+    proper syntax highlighting
+python_name: jupyterlab_markdown_syntax_rendering_fix
+repository: ''
+test: true
+
