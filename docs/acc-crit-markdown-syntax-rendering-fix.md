@@ -1,0 +1,48 @@
+# Acceptance Criteria - Markdown Syntax Rendering Fix
+
+Extension recovers lost syntax highlighting on rendered Markdown fenced code blocks. JupyterLab's async highlighter can throw (cold/flaky CodeMirror language-chunk import, or registry not yet ready), leaving the markdown renderer to emit a plain `pre > code.language-*` with no token spans. A `MutationObserver` on the application shell detects those plain blocks and re-runs the highlight via `IEditorLanguageRegistry`, retrying a bounded number of times.
+
+- [x] **Activation** - plugin activates on `autoStart` and logs exactly `JupyterLab extension jupyterlab_markdown_syntax_rendering_fix is activated!`
+  - log: 2026-06-23 implemented (v0.1.1), verified v0.1.7 (jest + Galata)
+- [x] **Dependency** - plugin requires `IEditorLanguageRegistry` from `@jupyterlab/codemirror`, activation receives it
+  - log: 2026-06-23 implemented (v0.1.1), verified v0.1.7 (jest + Galata)
+- [x] **Detect plain block** - a `pre > code` with a `language-<name>` class, non-empty text and zero child elements is flagged as unhighlighted
+  - log: 2026-06-23 implemented (v0.1.1), verified v0.1.7 (jest + Galata)
+- [x] **Detect at root** - `collectPlainBlocks` also matches the root node itself, not only descendants, so an observer handed a bare `<code>` still detects it
+  - log: 2026-06-23 added after adversarial review finding #3 (v0.1.2)
+- [x] **Recover highlighting** - flagged block is re-highlighted via `languages.highlight(text, findBest(name), host)`; on success its children are replaced (`replaceChildren`, moved nodes, no innerHTML round-trip) with the token `<span>`s and it is marked `data-msrf="1"`
+  - log: 2026-06-23 implemented (v0.1.1); replaceChildren per review finding #8 (v0.1.2)
+- [x] **Bounded retry** - only a thrown highlight is retried (the one transient case), up to 4 attempts backing off 750/1500/3000 ms (~5s); a chunk that never loads in that window stays plain until re-render. Retry genuinely re-runs the dynamic import: `highlight()` awaits `getLanguage()` which caches `spec.support` only on success, and webpack resets a failed chunk load
+  - log: 2026-06-23 added after review R2-#2 (v0.1.2); retry-legitimacy verified vs source after R2-#1 (v0.1.3); retry restricted to thrown case + backoff after R3-#2/#3 (v0.1.4)
+- [x] **Idempotent** - an in-flight block is deduped via a `WeakSet` so concurrent observer callbacks never double-process it; a terminal block carries a `data-msrf` state (`1` highlighted / `plain` no tokens / `skipped` unsupported / `failed` exhausted) and is never reprocessed
+  - log: 2026-06-23 implemented (v0.1.1); WeakSet in-flight added with retry (v0.1.2); four terminal states after R3-#2 (v0.1.4)
+- [x] **Observe new renders** - a `MutationObserver` on the application shell node (`app.shell.node`, subtree, childList) catches markdown rendered after activation; the shell scope excludes noisy body-level overlays (completer, tooltips, menus), and added nodes inside `.cm-editor` are skipped (editors churn on every keystroke and never hold rendered markdown)
+  - log: 2026-06-23 implemented (v0.1.1); scoped from document.body to shell per review R1-#1 (v0.1.2); `.cm-editor` skip added per review R2-#3 (v0.1.3)
+- [x] **Initial sweep** - markdown already rendered before activation is scanned once at activation
+  - log: 2026-06-23 implemented (v0.1.1), verified v0.1.7 (jest + Galata)
+- [x] **Leave highlighted blocks** - a block that already has token `<span>` children is never touched
+  - log: 2026-06-23 implemented (v0.1.1), verified v0.1.7 (jest + Galata)
+- [x] **Icon-safe** - extension never calls `docRegistry.addFileType` (would override icon extensions); highlighting goes only through the language registry
+  - log: 2026-06-23 implemented (v0.1.1), verified v0.1.7 (jest + Galata)
+- [x] **Edge: mermaid fence** - `language-mermaid` is skipped (owned by the mermaid renderer)
+  - log: 2026-06-23 implemented (v0.1.1), verified v0.1.7 (jest + Galata)
+- [x] **Edge: inline / no-language code** - inline `<code>` and `pre > code` without a `language-*` class are ignored
+  - log: 2026-06-23 implemented (v0.1.1), verified v0.1.7 (jest + Galata)
+- [x] **Edge: empty or whitespace block** - a block whose text is empty or whitespace-only is ignored
+  - log: 2026-06-23 implemented (v0.1.1), verified v0.1.7 (jest + Galata)
+- [x] **Edge: unknown language** - `findBest(name)` returns null -> marked `data-msrf="skipped"` immediately, no retry, no warning, left plain
+  - log: 2026-06-23 implemented (v0.1.1); made terminal-no-retry after R3-#2 (v0.1.4)
+- [x] **Edge: persistent highlight failure** - `highlight` throws on every attempt -> caught each time, after 4 backed-off attempts marked `data-msrf="failed"`, `console.warn` logged once, block left as plain text (no regression vs without the extension)
+  - log: 2026-06-23 implemented (v0.1.1); thrown-only retry + backoff after R3-#2/#3 (v0.1.4)
+- [x] **Edge: highlight yields no spans** - `host` has no child elements after a clean highlight -> marked `data-msrf="plain"`, children not replaced, not retried, not warned (span-less content is not a failure)
+  - log: 2026-06-23 implemented (v0.1.1); distinguished from failure after R3-#2 (v0.1.4)
+- [x] **Edge: self-written spans** - the token spans the extension writes via `replaceChildren` are skipped by the observer (`code[data-msrf]` is set before the write), so recovery does not re-trigger work
+  - log: 2026-06-23 added after review R3-#4 (v0.1.4)
+- [x] **Edge: overlay markdown** - markdown rendered in body-level overlays (completer / hover docstrings) outside `app.shell.node` is not recovered; deliberate tradeoff to avoid the high-churn overlay layer, recovers on next in-shell render or reload
+  - log: 2026-06-23 documented after review R3-#5 (v0.1.4)
+- [x] **Edge: concurrent observer callbacks** - block added to `inFlight` synchronously before the first await, so overlapping mutations cannot double-process it
+  - log: 2026-06-23 implemented (v0.1.1); hardened with WeakSet (v0.1.2)
+- [x] **Unit tests** - jest covers `languageFromClass`, `needsHighlight`, `collectPlainBlocks` (including root-match and the edge cases above)
+  - log: 2026-06-23 implemented (v0.1.1), verified v0.1.7 (jest + Galata)
+- [x] **UI test** - Galata test asserts the activation message and that an injected plain `language-python` block in the shell is recovered (gains spans, marked `data-msrf="1"`)
+  - log: 2026-06-23 implemented (v0.1.1), verified v0.1.7 (jest + Galata)
