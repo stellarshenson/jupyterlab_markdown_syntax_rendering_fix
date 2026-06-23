@@ -1,6 +1,6 @@
 {
     "name": "jupyterlab_markdown_syntax_rendering_fix",
-    "version": "0.6.8",
+    "version": "0.6.9",
     "description": "Jupyterlab extension to fix a common issue with Markdown renderer where some race condition causes for the fenced code block to not have proper syntax highlighting",
     "keywords": [
         "jupyter",
