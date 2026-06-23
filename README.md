@@ -18,11 +18,13 @@ JupyterLab 4.x extension that restores syntax-highlight colours in rendered Mark
 Fenced code blocks in rendered Markdown (the Markdown Preview, README files, `.md` documents) appear in a single flat colour instead of syntax-highlighted, even though the highlighter clearly ran.
 
 **Symptoms**:
+
 - bash, python, json and other fenced blocks render in one uniform grey, not coloured tokens
 - Opening the same file in the editor, then returning to the preview, makes the colours appear - and they stay for the rest of the session
 - Affects any rendered Markdown when the session has not yet opened a CodeMirror editor (notebook cell, file editor, console)
 
 **Root cause - the highlight StyleModule is never mounted**:
+
 - JupyterLab's Markdown renderer highlights code through `@jupyterlab/codemirror`, producing token `<span>`s with CodeMirror's generated highlight classes (e.g. `ͼs`, `ͼ11`)
 - Those class names are emitted by a CodeMirror `StyleModule`, and the CSS that gives them colour is mounted only when an `EditorView` is instantiated (via `syntaxHighlighting(jupyterHighlightStyle)`)
 - With only Markdown previews open, no `EditorView` exists, so the StyleModule is never mounted - the spans carry the right classes but no colour rule, and inherit the plain code text colour
@@ -33,6 +35,7 @@ Fenced code blocks in rendered Markdown (the Markdown Preview, README files, `.m
 The extension mounts the highlight StyleModule's CSS once at startup, achieving the same effect as opening an editor - without one.
 
 **How it works**:
+
 - On activation, reads the rules from `jupyterHighlightStyle.module` (the same StyleModule the Markdown renderer's spans reference) via `getRules()`
 - Injects them into a single `<style>` element in the document head, so every rendered Markdown code block is coloured immediately
 - Colours are expressed as `--jp-mirror-editor-*-color` CSS variables, so they resolve through whatever theme is active and update on theme change
