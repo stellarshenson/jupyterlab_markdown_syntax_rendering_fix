@@ -1,7 +1,7 @@
 {
     "name": "jupyterlab_markdown_syntax_rendering_fix",
-    "version": "0.6.9",
-    "description": "Jupyterlab extension to fix a common issue with Markdown renderer where some race condition causes for the fenced code block to not have proper syntax highlighting",
+    "version": "1.0.2",
+    "description": "JupyterLab extension that restores syntax-highlight colours in rendered Markdown fenced code blocks by mounting the CodeMirror highlight StyleModule, so token colours apply even when no editor is open",
     "keywords": [
         "jupyter",
         "jupyterlab",

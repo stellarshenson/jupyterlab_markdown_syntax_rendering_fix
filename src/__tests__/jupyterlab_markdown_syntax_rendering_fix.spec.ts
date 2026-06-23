@@ -1,100 +1,29 @@
-import {
-  PROCESSED_ATTR,
-  collectPlainBlocks,
-  languageFromClass,
-  needsHighlight
-} from '../highlight';
+import { HIGHLIGHT_STYLE_ID, injectHighlightRules } from '../highlight';
 
-/** Build a `pre > code` block with the given class and inner HTML. */
-function block(className: string, inner: string): HTMLElement {
-  const pre = document.createElement('pre');
-  const code = document.createElement('code');
-  code.className = className;
-  code.innerHTML = inner;
-  pre.appendChild(code);
-  return code;
-}
-
-describe('languageFromClass', () => {
-  it('extracts the language from a language-* class', () => {
-    expect(languageFromClass('language-bash')).toBe('bash');
+describe('injectHighlightRules', () => {
+  afterEach(() => {
+    document.getElementById(HIGHLIGHT_STYLE_ID)?.remove();
   });
 
-  it('finds the token among other classes', () => {
-    expect(languageFromClass('hljs language-python foo')).toBe('python');
+  it('appends a style element carrying the rules', () => {
+    injectHighlightRules('.ͼs{color:red}');
+    const style = document.getElementById(HIGHLIGHT_STYLE_ID);
+    expect(style).not.toBeNull();
+    expect(style!.tagName).toBe('STYLE');
+    expect(style!.textContent).toBe('.ͼs{color:red}');
   });
 
-  it('keeps symbol-bearing language names', () => {
-    expect(languageFromClass('language-c++')).toBe('c++');
-    expect(languageFromClass('language-c#')).toBe('c#');
-  });
-
-  it('returns null without a language class', () => {
-    expect(languageFromClass('hljs')).toBeNull();
-    expect(languageFromClass('')).toBeNull();
-  });
-});
-
-describe('needsHighlight', () => {
-  it('flags a plain block with a language and text', () => {
-    expect(needsHighlight(block('language-bash', 'pip install x'))).toBe(true);
-  });
-
-  it('ignores a block that already has token spans', () => {
-    expect(
-      needsHighlight(block('language-bash', '<span class="tok">pip</span>'))
-    ).toBe(false);
-  });
-
-  it('ignores an already-processed block', () => {
-    const code = block('language-bash', 'pip install x');
-    code.setAttribute(PROCESSED_ATTR, '1');
-    expect(needsHighlight(code)).toBe(false);
-  });
-
-  it('ignores blocks without a language class', () => {
-    expect(needsHighlight(block('', 'plain text'))).toBe(false);
-  });
-
-  it('ignores empty or whitespace-only blocks', () => {
-    expect(needsHighlight(block('language-bash', '   '))).toBe(false);
-  });
-
-  it('skips languages owned by other renderers (mermaid)', () => {
-    expect(needsHighlight(block('language-mermaid', 'graph TD; A-->B'))).toBe(
-      false
+  it('is idempotent - a second call does not add another element', () => {
+    injectHighlightRules('.ͼs{color:red}');
+    injectHighlightRules('.ͼs{color:blue}');
+    expect(document.querySelectorAll(`#${HIGHLIGHT_STYLE_ID}`)).toHaveLength(1);
+    expect(document.getElementById(HIGHLIGHT_STYLE_ID)!.textContent).toBe(
+      '.ͼs{color:red}'
     );
   });
-});
 
-describe('collectPlainBlocks', () => {
-  it('returns only the plain language blocks under a root', () => {
-    const root = document.createElement('div');
-    root.appendChild(block('language-bash', 'echo hi').parentElement!);
-    root.appendChild(
-      block('language-python', '<span class="tok">import os</span>')
-        .parentElement!
-    );
-    root.appendChild(block('language-json', '{"a": 1}').parentElement!);
-    root.appendChild(
-      block('language-mermaid', 'graph TD; A-->B').parentElement!
-    );
-
-    const found = collectPlainBlocks(root);
-    const langs = found.map(c => languageFromClass(c.className));
-    expect(langs).toEqual(['bash', 'json']);
-  });
-
-  it('matches a bare code element passed as the root', () => {
-    const code = block('language-bash', 'echo hi');
-    expect(collectPlainBlocks(code)).toEqual([code]);
-  });
-
-  it('returns an empty list when everything is already highlighted', () => {
-    const root = document.createElement('div');
-    root.appendChild(
-      block('language-bash', '<span class="tok">echo</span>').parentElement!
-    );
-    expect(collectPlainBlocks(root)).toHaveLength(0);
+  it('ignores an empty rule string', () => {
+    injectHighlightRules('');
+    expect(document.getElementById(HIGHLIGHT_STYLE_ID)).toBeNull();
   });
 });

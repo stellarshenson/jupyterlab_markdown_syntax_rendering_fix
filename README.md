@@ -8,23 +8,35 @@
 [![Brought To You By KOLOMOLO](https://img.shields.io/badge/Brought%20To%20You%20By-KOLOMOLO-00ffff?style=flat)](https://kolomolo.com)
 [![Donate PayPal](https://img.shields.io/badge/Donate-PayPal-blue?style=flat)](https://www.paypal.com/donate/?hosted_button_id=B4KPBJDLLXTSA)
 
-Fenced code blocks in rendered Markdown sometimes appear plain and uncoloured - the highlighting silently fails when a CodeMirror language chunk loads late or the language registry is not yet ready, and JupyterLab falls back to plain text. This extension restores the highlighting that was lost to that race.
+JupyterLab 4.x extension that restores syntax-highlight colours in rendered Markdown fenced code blocks when no CodeMirror editor is open.
 
-## Features
+> [!WARNING]
+> This extension is a temporary fix for a JupyterLab 4.x behaviour where rendered Markdown code highlighting depends on a CodeMirror editor having been opened. Once JupyterLab core mounts the highlight style for the Markdown renderer independently, this extension will be obsolete and should not be installed.
 
-- **Recovers lost highlighting** - re-applies syntax highlighting to fenced code blocks that rendered plain because the async highlighter missed the cache
-- **Language agnostic** - works for any fenced language (bash, python, json, ...), independent of mermaid
-- **Targets the cold-load race** - handles the case where a language chunk imports late or the registry is wired after an early render
-- **Frontend only** - pure TypeScript labextension, no server component
+## The Problem
 
-## How it works
+Fenced code blocks in rendered Markdown (the Markdown Preview, README files, `.md` documents) appear in a single flat colour instead of syntax-highlighted, even though the highlighter clearly ran.
 
-JupyterLab highlights fenced code in rendered Markdown with an async pass that fills a cache and a synchronous renderer that reads it. When the async highlight throws - a CodeMirror language-chunk import that rejects, or a registry that is not yet wired when an early render fires - the cache misses and the renderer emits a plain `<pre><code>`. This extension watches the application shell for those plain blocks and re-runs the highlight once the language is available.
+**Symptoms**:
+- bash, python, json and other fenced blocks render in one uniform grey, not coloured tokens
+- Opening the same file in the editor, then returning to the preview, makes the colours appear - and they stay for the rest of the session
+- Affects any rendered Markdown when the session has not yet opened a CodeMirror editor (notebook cell, file editor, console)
 
-- **Detect** - a `MutationObserver` flags any rendered `pre > code` that has a `language-*` class and text but no token `<span>` children
-- **Recover** - re-runs the highlight through `IEditorLanguageRegistry` and swaps in the token spans, only when the highlighted text matches the source exactly so it never truncates content
-- **Resilient** - retries a thrown highlight a few times with backoff while the language chunk finishes loading, then gives up cleanly and leaves the original plain text untouched
-- **Unobtrusive** - each block is handled at most once, and editor and overlay churn is skipped to keep the observer cheap
+**Root cause - the highlight StyleModule is never mounted**:
+- JupyterLab's Markdown renderer highlights code through `@jupyterlab/codemirror`, producing token `<span>`s with CodeMirror's generated highlight classes (e.g. `ͼs`, `ͼ11`)
+- Those class names are emitted by a CodeMirror `StyleModule`, and the CSS that gives them colour is mounted only when an `EditorView` is instantiated (via `syntaxHighlighting(jupyterHighlightStyle)`)
+- With only Markdown previews open, no `EditorView` exists, so the StyleModule is never mounted - the spans carry the right classes but no colour rule, and inherit the plain code text colour
+- Opening any editor mounts the StyleModule document-wide, which is why the workaround of opening the file in the editor fixes the preview
+
+## The Fix
+
+The extension mounts the highlight StyleModule's CSS once at startup, achieving the same effect as opening an editor - without one.
+
+**How it works**:
+- On activation, reads the rules from `jupyterHighlightStyle.module` (the same StyleModule the Markdown renderer's spans reference) via `getRules()`
+- Injects them into a single `<style>` element in the document head, so every rendered Markdown code block is coloured immediately
+- Colours are expressed as `--jp-mirror-editor-*-color` CSS variables, so they resolve through whatever theme is active and update on theme change
+- Injection is idempotent (fixed element id) and frontend-only - no server component, no per-render DOM observer
 
 ## Requirements
 
@@ -45,3 +57,65 @@ To remove the extension, execute:
 ```bash
 pip uninstall jupyterlab_markdown_syntax_rendering_fix
 ```
+
+## Contributing
+
+### Development install
+
+Note: You will need NodeJS to build the extension package.
+
+The `jlpm` command is JupyterLab's pinned version of [yarn](https://yarnpkg.com/) that is installed with JupyterLab. You may use `yarn` or `npm` in lieu of `jlpm` below.
+
+```bash
+# Clone the repo to your local environment
+# Change directory to the jupyterlab_markdown_syntax_rendering_fix directory
+
+# Set up a virtual environment and install package in development mode
+python -m venv .venv
+source .venv/bin/activate
+pip install --editable "."
+
+# Link your development version of the extension with JupyterLab
+jupyter labextension develop . --overwrite
+
+# Rebuild extension TypeScript source after making changes
+# IMPORTANT: Unlike the steps above which are performed only once, do this step
+# every time you make a change.
+jlpm build
+```
+
+You can watch the source directory and run JupyterLab at the same time in different terminals to watch for changes in the extension's source and automatically rebuild the extension.
+
+```bash
+# Watch the source directory in one terminal, automatically rebuilding when needed
+jlpm watch
+# Run JupyterLab in another terminal
+jupyter lab
+```
+
+### Development uninstall
+
+```bash
+pip uninstall jupyterlab_markdown_syntax_rendering_fix
+```
+
+In development mode, you will also need to remove the symlink created by `jupyter labextension develop` command. To find its location, you can run `jupyter labextension list` to figure out where the `labextensions` folder is located. Then you can remove the symlink named `jupyterlab_markdown_syntax_rendering_fix` within that folder.
+
+### Testing the extension
+
+#### Frontend tests
+
+This extension is using [Jest](https://jestjs.io/) for JavaScript code testing.
+
+To execute them, execute:
+
+```sh
+jlpm
+jlpm test
+```
+
+#### Integration tests
+
+This extension uses [Playwright](https://playwright.dev/docs/intro) for the integration tests (aka user level tests). More precisely, the JupyterLab helper [Galata](https://github.com/jupyterlab/jupyterlab/tree/master/galata) is used to handle testing the extension in JupyterLab.
+
+More information are provided within the [ui-tests](./ui-tests/README.md) README.

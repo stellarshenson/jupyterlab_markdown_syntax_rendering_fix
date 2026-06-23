@@ -25,17 +25,20 @@ Single TypeScript plugin at `src/index.ts`, no Python server component.
 
 **Purpose**: Fix the intermittent loss of syntax highlighting in rendered Markdown fenced code blocks.
 
-**Root cause** (reconstructed from the shipped JupyterLab 4.6 `jlab_core` bundle): `marked` runs in async
-mode. An async highlighter (`g`) writes a `lang|text` cache by awaiting `registry.highlight(...)`, which lazily
-dynamic-imports the CodeMirror language chunk. The synchronous code renderer reads that cache and, on any miss,
-falls back to a plain uncoloured `<pre><code>`. A miss occurs whenever the async highlight threw - the language
-chunk's lazy `spec.load()` import rejected (chunk-load flake/timeout, often behind the JupyterHub proxy) or the
-language registry was not yet wired when an early render fired. The `catch` swallows the error
-(`console.error("Failed to highlight ...")`), the cache stays empty, and the renderer ships plain text. The
-failure is independent of mermaid - it reproduces on bash/python/json fences with zero mermaid present.
+**Root cause** (verified live via the Playwright DOM probe, 2026-06-23): the Markdown renderer's fenced code
+blocks DO receive correct token `<span>`s with CodeMirror's generated highlight classes (e.g. `ͼs`, `ͼ11`) - the
+highlight runs fine. What is missing is colour. Those class names come from a CodeMirror `StyleModule` whose CSS
+is mounted only when an `EditorView` is instantiated (`syntaxHighlighting(jupyterHighlightStyle)`). With only
+Markdown previews open, no editor exists, the StyleModule is never mounted, and the spans inherit the plain code
+colour - measured: every token computed to `rgb(192,192,192)`, identical to the surrounding code text. Opening any
+editor mounts the StyleModule document-wide, which is exactly why opening the file in the editor makes the preview
+colour and keeps it coloured. The earlier cold-chunk / cache-miss theory was wrong: the spans are present, not
+missing.
 
-**Implication for the fix**: the durable fix is to retry or re-run the highlight after the language chunk loads;
-the only built-in workaround is re-rendering (reload tab / reopen preview) once chunks are warm.
+**The fix**: mount the highlight StyleModule's rules at startup. `src/index.ts` activates and calls
+`injectHighlightRules(jupyterHighlightStyle.module?.getRules() ?? '')` (helper in `src/highlight.ts`), injecting
+the `ͼ*` colour rules into one `<style>` element. Colours are `--jp-mirror-editor-*-color` variables, so they
+follow the active theme. Frontend-only, idempotent, no DOM observer.
 
 ## Journal Rules (Project-Specific)
 
