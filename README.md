@@ -17,6 +17,15 @@ Fenced code blocks in rendered Markdown sometimes appear plain and uncoloured - 
 - **Targets the cold-load race** - handles the case where a language chunk imports late or the registry is wired after an early render
 - **Frontend only** - pure TypeScript labextension, no server component
 
+## How it works
+
+JupyterLab highlights fenced code in rendered Markdown with an async pass that fills a cache and a synchronous renderer that reads it. When the async highlight throws - a CodeMirror language-chunk import that rejects, or a registry that is not yet wired when an early render fires - the cache misses and the renderer emits a plain `<pre><code>`. This extension watches the application shell for those plain blocks and re-runs the highlight once the language is available.
+
+- **Detect** - a `MutationObserver` flags any rendered `pre > code` that has a `language-*` class and text but no token `<span>` children
+- **Recover** - re-runs the highlight through `IEditorLanguageRegistry` and swaps in the token spans, only when the highlighted text matches the source exactly so it never truncates content
+- **Resilient** - retries a thrown highlight a few times with backoff while the language chunk finishes loading, then gives up cleanly and leaves the original plain text untouched
+- **Unobtrusive** - each block is handled at most once, and editor and overlay churn is skipped to keep the observer cheap
+
 ## Requirements
 
 - JupyterLab >= 4.0.0
